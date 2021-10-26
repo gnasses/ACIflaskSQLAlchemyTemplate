@@ -93,18 +93,6 @@ def action():
                 interf = endpoint.if_name
                 table_row = { "mac": endpoint.mac, "ip": endpoint.ip, "int": interf}
                 table_data.append(table_row)
-        # table = PrettyTable()
-        # table.field_names = ['IP Address','MAC Address',"Interface"]
-        # for row in table_data:
-        #     if row['MAC'] == macrequest:
-        #         mac=row['MAC']
-        #         ip=row['IP']
-        #         interf=row['INT']
-        #         new_entry = TABLE(mac=mac, ip=ip, interface=interf)
-        #         db.session.add(new_entry)
-        #         db.session.commit()
-        # data = TABLE.query.filter(TABLE.mac == macrequest).all()
-        # print (table_data)
         return render_template('action.html', data=table_data) 
     else:       
         return redirect('/')        
@@ -120,7 +108,6 @@ def collect():
             print("SUCCESS: Logged into APIC: %s" % apic_ip)
             db.session.query(TABLE).delete()
         endpoints = aci.Endpoint.get(session)
-        #print (endpoints)
         table_data = []
         for endpoint in endpoints:
             if endpoint.if_dn:
@@ -135,8 +122,6 @@ def collect():
                 interf = endpoint.if_name
                 table_row = { "MAC": endpoint.mac, "IP": endpoint.ip, "INT": interf}
                 table_data.append(table_row)
-        # table = PrettyTable()
-        # table.field_names = ['IP Address','MAC Address',"Interface"]
         print (table_data)
         for row in table_data:
                 mac=row['MAC']
