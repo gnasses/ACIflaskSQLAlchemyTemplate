@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 
 {% block head %}
-<title>Device Version Reporting</title>
+<title>ACI MAC-Level Reporting</title>
 {% endblock %}
 
 {% block body %}
@@ -11,19 +11,15 @@
     <h2>New Device Entry</h2>
     <table>
         <tr>
-            <th>Device</th>
-            <th>OS</th>
-            <th>Hardware</th>            
-            <th>Version</th>
-            <th>Image File</th>
+            <th>MAC</th>
+            <th>IP</th>       
+            <th>Interface</th>
         </tr>
         {% for d in data %}
             <tr>
-                <td>{{ d.device }}</td>
-                <td>{{ d.os }}</td>
-                <td>{{ d.hardware }}</td>
-                <td>{{ d.version}}</td> 
-                <td>{{ d.image}}</td>             
+                <td>{{ d.mac}}</td>
+                <td>{{ d.ip }}</td>
+                <td>{{ d.interface}}</td>              
             </tr>
         {% endfor %}
     </table>

@@ -7,6 +7,9 @@ import util
 import json
 from ntc_templates.parse import parse_output
 from pythonping import ping
+import acitoolkit.acitoolkit as aci
+import sys
+import re
 # Init app
 app = Flask(__name__)
 # Database
@@ -21,11 +24,10 @@ ma = Marshmallow(app)
 #Here is the class to create/use the SQL table/columns, a primary key is edit/replace columns as needed
 class TABLE(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    device = db.Column(db.String(100), nullable=False)
-    os = db.Column(db.String(20))
-    version = db.Column(db.String(40))
-    image = db.Column(db.String(60))
-    hardware = db.Column(db.String(40))
+    mac = db.Column(db.String(50), nullable=False)
+    ip = db.Column(db.String(50))
+    interface = db.Column(db.String(60))
+
     
     def __repr__(self):
         return '<%r>' % self.id
@@ -33,7 +35,7 @@ class TABLE(db.Model):
 # fields in the schema should match columns in the db
 class TABLESchema(ma.Schema):
     class Meta:
-        fields = ('id', 'device', 'os', 'version', 'image', 'hardware')
+        fields = ('id', 'mac', 'ip', 'interface')
 # Init Schema        
 TABLE_schema = TABLESchema()
 TABLES_schema = TABLESchema(many=True)
@@ -43,14 +45,22 @@ To build/rebuild the db, execute the following after stopping the app, closing t
 from app import db
 db.create_all()
 """
+# APIC Vars
+apic_ip = '10.10.20.14'
+#apic_ip = 'sandboxapicdc.cisco.com'
+apic_username = 'admin'
+apic_password = 'C1sco12345'
+#apic_password = '!v3G@!4@Y'
+apic_url = 'https://' + apic_ip
+
 #App Routes
 #The first route is the index route which is required. Best practive is to limit methods to those supported.
 # Typical function show with a post method for form, otherise a default listing of all db entries
 @app.route('/', methods=['POST', 'GET'])
 def index():
     if request.method == 'POST':
-        device = request.form['device']
-        data = TABLE.query.filter(TABLE.device == device).all()
+        mac = request.form['mac']
+        data = TABLE.query.filter(TABLE.mac == mac).all()
         return render_template('index.html', data=data)
     else:
         data = TABLE.query.all()
@@ -60,49 +70,96 @@ def index():
 @app.route('/action', methods=['POST', 'GET'])
 def action():
     if request.method == 'POST':
-        device = request.form['device']
-        net_device = util.CiscoDeviceRO(host=device)
-        net_connect = Netmiko(**net_device.__dict__)
-        # insert python code to extract appropriate data and set varaibles for DB entry
-        # example for 'show version', adapt as needed and use ntc parsers or custom regex to extract vars
-        show_ver = net_connect.send_command("show version")
-        # Be a good steward of th3 network and disconnect sessions when done gathering info
-        net_connect.disconnect()
-        if "NX-OS" in show_ver:
-            os = "nxos"
-            ver_parsed = parse_output(platform="cisco_nxos", command="show version", data=show_ver)
-            for sub in ver_parsed:
-                version = sub['os']
-                image = sub['boot_image']
-                hardware = sub['platform']                
+        macrequest = request.form['mac']
+        session = aci.Session(apic_url, apic_username, apic_password)
+        resp = session.login()
+        if not resp.ok:
+            print("ERROR: Could not login into APIC: %s" % apic_ip)
+            sys.exit(0)
         else:
-            os = "ios"
-            ver_parsed = parse_output(platform="cisco_ios", command="show version", data=show_ver)
-            for sub in ver_parsed:
-                version = sub['version']
-                image = sub['running_image']
-                hardware = sub['hardware'][0]
-        new_entry = TABLE(device=device, os=os, version=version, image=image, hardware=hardware)
-        db.session.add(new_entry)
-        db.session.commit()
-        data = TABLE.query.filter(TABLE.device == device).all()
-        return render_template('action.html', data=data) 
+            print("SUCCESS: Logged into APIC: %s" % apic_ip)
+        endpoints = aci.Endpoint.get(session)
+        table_data = []
+        for endpoint in endpoints:
+            if endpoint.if_dn:
+                for dn in endpoint.if_dn:
+                    match = re.match('protpaths-(\d+)-(\d+)', dn.split('/')[2])
+                    if match:
+                        if match.group(1) and match.group(2):
+                            interf = "Nodes: " + match.group(1) + "-" + match.group(2) + " " + endpoint.if_name
+                            table_row = { "mac": endpoint.mac, "ip": endpoint.ip, "interface": interf}
+                            table_data.append(table_row)
+            else:
+                interf = endpoint.if_name
+                table_row = { "mac": endpoint.mac, "ip": endpoint.ip, "int": interf}
+                table_data.append(table_row)
+        # table = PrettyTable()
+        # table.field_names = ['IP Address','MAC Address',"Interface"]
+        # for row in table_data:
+        #     if row['MAC'] == macrequest:
+        #         mac=row['MAC']
+        #         ip=row['IP']
+        #         interf=row['INT']
+        #         new_entry = TABLE(mac=mac, ip=ip, interface=interf)
+        #         db.session.add(new_entry)
+        #         db.session.commit()
+        # data = TABLE.query.filter(TABLE.mac == macrequest).all()
+        # print (table_data)
+        return render_template('action.html', data=table_data) 
     else:       
         return redirect('/')        
-    
-    
- 
+@app.route('/collect', methods=['GET', 'POST'])
+def collect():    
+    if request.method == 'POST':
+        session = aci.Session(apic_url, apic_username, apic_password)
+        resp = session.login()
+        if not resp.ok:
+            print("ERROR: Could not login into APIC: %s" % apic_ip)
+            sys.exit(0)
+        else:
+            print("SUCCESS: Logged into APIC: %s" % apic_ip)
+            db.session.query(TABLE).delete()
+        endpoints = aci.Endpoint.get(session)
+        #print (endpoints)
+        table_data = []
+        for endpoint in endpoints:
+            if endpoint.if_dn:
+                for dn in endpoint.if_dn:
+                    match = re.match('protpaths-(\d+)-(\d+)', dn.split('/')[2])
+                    if match:
+                        if match.group(1) and match.group(2):
+                            interf = "Nodes: " + match.group(1) + "-" + match.group(2) + " " + endpoint.if_name
+                            table_row = { "MAC": endpoint.mac, "IP": endpoint.ip, "INT": interf}
+                            table_data.append(table_row)
+            else:
+                interf = endpoint.if_name
+                table_row = { "MAC": endpoint.mac, "IP": endpoint.ip, "INT": interf}
+                table_data.append(table_row)
+        # table = PrettyTable()
+        # table.field_names = ['IP Address','MAC Address',"Interface"]
+        print (table_data)
+        for row in table_data:
+                mac=row['MAC']
+                ip=row['IP']
+                interface=row['INT']
+                new_entry = TABLE(mac=mac, ip=ip, interface=interface)
+                db.session.add(new_entry)
+                db.session.commit()
+        data = TABLE.query.all()
+        print (data)
+        return render_template('action.html', data=data)     
+    else:       
+        return redirect('/')  
     
 
 
 # API Routes
 # API GET Query
-@app.route('/api/<device>', methods = ['GET'])
-def api_function(device):
-    data = TABLE.query.filter(TABLE.device == device).all()
+@app.route('/api/mac', methods = ['GET'])
+def api_function():
+    data = TABLE.query.all()
     result = TABLES_schema.dump(data)
-    return jsonify(result) 
-
+    return jsonify(result)
 
 if __name__ == "__main__":
     app.run(host='127.0.0.1', port=5000)
