@@ -71,6 +71,7 @@ def index():
 def action():
     if request.method == 'POST':
         macrequest = request.form['mac']
+# This following section contains code adapted from Cisco Live demo using the ACI Toolkit        
         session = aci.Session(apic_url, apic_username, apic_password)
         resp = session.login()
         if not resp.ok:
@@ -92,7 +93,7 @@ def action():
             else:
                 interf = endpoint.if_name
                 table_row = { "mac": endpoint.mac, "ip": endpoint.ip, "int": interf}
-                table_data.append(table_row)
+                table_data.append(table_row)         
         return render_template('action.html', data=table_data) 
     else:       
         return redirect('/')        
